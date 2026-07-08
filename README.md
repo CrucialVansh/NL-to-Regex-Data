@@ -102,7 +102,8 @@ uv run python scripts/generate_large_csv.py --rows 100000 --output large_test.cs
 ```
 # Demo Video
 
-![Video](assets/My Movie 2.mp4)
+https://github.com/user-attachments/assets/d3295054-de48-4dea-b561-b32c1d5a3fda
+
 ## Further reading
 
 - [`backend/README.md`](backend/README.md) — API endpoints, Spark partitioning, Redis layout, observability
