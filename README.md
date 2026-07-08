@@ -6,15 +6,9 @@ Upload a file, describe a pattern in plain English, and run async regex or liter
 
 ## Architecture
 
-```text
-Browser ──► frontend (nginx :3000)
-                ├── /api/*  ──► Django (Gunicorn :8000) ──► PostgreSQL
-                └── /llm/*  ──► Django                      ▲
-                                              Redis ◄───────┤
-                                              Celery worker ┘
-                                                   ├── OpenAI
-                                                   └── PySpark
-```
+![Graph](assets/architecture_local.png)
+
+
 
 | Directory | Stack | Role |
 |---|---|---|
@@ -106,7 +100,9 @@ cd backend
 uv run python scripts/generate_large_csv.py --rows 100000 --output large_test.csv
 # Upload via UI at http://localhost:3000
 ```
+# Demo Video
 
+![Video](assets/My Movie 2.mp4)
 ## Further reading
 
 - [`backend/README.md`](backend/README.md) — API endpoints, Spark partitioning, Redis layout, observability
