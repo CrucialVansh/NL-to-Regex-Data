@@ -1,6 +1,5 @@
 """Upload and job API views."""
 
-import asyncio
 import logging
 import os
 import tempfile
@@ -8,7 +7,7 @@ from pathlib import Path
 
 from asgiref.sync import sync_to_async
 from django.conf import settings
-from django.core.files.base import ContentFile
+from django.core.files import File
 from django.core.files.storage import default_storage
 from django.http import HttpResponse, JsonResponse
 from django.views.decorators.csrf import csrf_exempt
@@ -25,24 +24,23 @@ MAX_PAGE_SIZE = 500
 DEFAULT_PAGE_SIZE = 50
 
 
-def background_save_worker(record_id: str, temp_path: str, filename: str) -> None:
-    """Move the uploaded file into Django storage and warm the column cache."""
-    try:
-        with open(temp_path, "rb") as source:
-            stored_name = default_storage.save(f"uploads/{filename}", ContentFile(source.read()))
-        record = UploadedFile.objects.get(id=record_id)
-        record.original_filename = filename
-        record.saved_filename = stored_name
-        record.file_path = default_storage.path(stored_name)
-        record.save()
-        get_file_columns(record.file_path, str(record.id))
-    except Exception:
-        logger.exception("Failed to save uploaded file for record %s", record_id)
-    finally:
-        try:
-            os.remove(temp_path)
-        except OSError:
-            logger.warning("Failed to remove temporary upload file %s", temp_path)
+def _save_to_storage_with_key(temp_path: str, storage_key: str) -> tuple[str, str]:
+    """Stream a temp file into FileSystemStorage; returns (absolute_path, stored_name).
+
+    Uses Django's File wrapper so FileSystemStorage drains the file via
+    File.chunks() — the entire file is never loaded into RAM.
+    """
+    with open(temp_path, "rb") as handle:
+        stored_name = default_storage.save(storage_key, File(handle))
+    return default_storage.path(stored_name), stored_name
+
+
+def _finalise_record(record_id: str, filename: str, file_path: str, stored_name: str) -> None:
+    record = UploadedFile.objects.get(id=record_id)
+    record.original_filename = filename
+    record.saved_filename = stored_name
+    record.file_path = file_path
+    record.save()
 
 
 def create_initial_record(filename: str) -> UploadedFile:
@@ -78,7 +76,16 @@ def _stream_upload_to_temp(uploaded_file, filename: str) -> str:
 
 @csrf_exempt
 async def instant_id_upload_view(request):
-    """Accept a file upload and return an id while storage completes in the background."""
+    """Stream upload to disk, then dispatch a Celery task for column cache warm-up.
+
+    Memory behaviour: _stream_upload_to_temp writes the file in chunks (never
+    fully in RAM); _save_to_storage drains the temp file via File.chunks() so
+    FileSystemStorage copies it without buffering the full content.  No full-file
+    bytes object is ever constructed.
+
+    Web and worker share the media Docker volume, so the Celery task can read
+    the saved file directly without any additional transfer.
+    """
     if request.method != "POST" or not request.FILES.get("file"):
         return JsonResponse({"status": "error", "message": "Invalid request"}, status=400)
 
@@ -87,31 +94,39 @@ async def instant_id_upload_view(request):
 
     if not is_allowed_upload(filename):
         return JsonResponse(
-            {
-                "error": "Unsupported file type. Allowed types: CSV, XLSX",
-            },
+            {"error": "Unsupported file type. Allowed types: CSV, XLSX"},
             status=400,
         )
 
+    temp_path: str | None = None
     try:
+        # 1. Write to a named temp file with size enforcement (chunk-by-chunk).
         temp_path = await sync_to_async(_stream_upload_to_temp)(uploaded_file, filename)
+
+        # 2. Reserve a DB row to get a stable record_id.
         record = await sync_to_async(create_initial_record)(filename)
         record_id = str(record.id)
 
-        loop = asyncio.get_running_loop()
-        loop.run_in_executor(
-            None,
-            background_save_worker,
-            record_id,
-            temp_path,
-            filename,
+        # 3. Stream temp → FileSystemStorage using File.chunks() (no RAM spike).
+        #    stored_name is relative (e.g. uploads/<id>/file.csv);
+        #    file_path is the absolute path on the shared media volume.
+        storage_key = f"uploads/{record_id}/{filename}"
+        file_path, stored_name = await sync_to_async(_save_to_storage_with_key)(
+            temp_path, storage_key
         )
+
+        # 4. Persist both paths on the DB row.
+        await sync_to_async(_finalise_record)(record_id, filename, file_path, stored_name)
+
+        # 5. Dispatch Celery task to warm the column cache on the worker.
+        from uploads.tasks import warm_upload_columns  # avoid circular import
+        await sync_to_async(warm_upload_columns.apply_async)((record_id,))
 
         return JsonResponse(
             {
                 "status": "processing",
-                "message": "Upload started.",
-                "uploaded_file_id": str(record.id),
+                "message": "Upload complete.",
+                "uploaded_file_id": record_id,
             },
             status=202,
         )
@@ -119,7 +134,13 @@ async def instant_id_upload_view(request):
         return JsonResponse({"error": str(exc)}, status=400)
     except Exception:
         logger.exception("Upload failed")
-        return JsonResponse({"status": "error", "message": "Invalid request"}, status=400)
+        return JsonResponse({"status": "error", "message": "Internal server error"}, status=500)
+    finally:
+        if temp_path:
+            try:
+                os.remove(temp_path)
+            except OSError:
+                logger.warning("Failed to remove temp upload file %s", temp_path)
 
 
 def _serialize_job(job: Job) -> dict:
