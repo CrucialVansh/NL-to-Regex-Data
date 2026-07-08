@@ -1,0 +1,25 @@
+[project]
+name = "djangoproject"
+version = "0.1.0"
+description = "NL regex pattern matching backend with PySpark and Celery"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    "celery>=5.6.3",
+    "django>=6.0.6",
+    "django-cors-headers>=4.7.0",
+    "dotenv>=0.9.9",
+    "fastparquet>=2026.5.0",
+    "flower>=2.0.1",
+    "gunicorn>=23.0.0",
+    "openai>=2.44.0",
+    "openpyxl>=3.1.5",
+    "psycopg2-binary>=2.9.10",
+    "pyarrow>=24.0.0",
+    "pydantic>=2.11.0",
+    "pyspark>=4.1.2",
+    "redis>=8.0.1",
+    "uuid-utils>=0.16.2",
+]
+
+[tool.uv]
+package = false

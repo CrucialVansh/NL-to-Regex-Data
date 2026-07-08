@@ -1,0 +1,33 @@
+FROM python:3.12-slim-bookworm
+
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    UV_COMPILE_BYTECODE=1 \
+    UV_LINK_MODE=copy \
+    PATH="/app/.venv/bin:$PATH"
+
+WORKDIR /app
+
+# Symlink JAVA_HOME for both amd64 and arm64 (Apple Silicon Docker).
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+        libpq5 \
+        openjdk-17-jre-headless \
+    && rm -rf /var/lib/apt/lists/* \
+    && ARCH="$(dpkg --print-architecture)" \
+    && ln -sf "/usr/lib/jvm/java-17-openjdk-${ARCH}" /usr/lib/jvm/java-17-openjdk
+
+ENV JAVA_HOME=/usr/lib/jvm/java-17-openjdk
+ENV PATH="${JAVA_HOME}/bin:${PATH}"
+
+COPY pyproject.toml uv.lock ./
+RUN uv sync --frozen --no-install-project
+
+COPY . .
+RUN uv sync --frozen
+
+RUN chmod +x scripts/entrypoint-web.sh scripts/entrypoint-worker.sh
+
+CMD ["scripts/entrypoint-worker.sh"]
