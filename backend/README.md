@@ -8,15 +8,8 @@ Dependencies are managed with **[uv](https://docs.astral.sh/uv/)** via `pyprojec
 
 ## Architecture
 
-```text
-Client ──► Django (Gunicorn) ──► PostgreSQL
-              │                      ▲
-              ├── Redis DB 1 (cache) │
-              ├── Redis DB 0 (broker)│
-              └── Celery worker ─────┘
-                     ├── OpenAI (regex generation)
-                     └── PySpark (CSV/XLSX → Parquet transform)
-```
+<img width="3342" height="4005" alt="Frontend to Backend-2026-07-08-053237" src="https://github.com/user-attachments/assets/16088e15-74ec-47e3-a176-6e8e70db77a7" />
+
 
 | Layer | Responsibility |
 |---|---|
