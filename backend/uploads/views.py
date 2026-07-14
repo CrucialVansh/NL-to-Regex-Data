@@ -274,7 +274,12 @@ def uploaded_file_data_view(request, uploaded_file_id):
         )
 
     try:
-        page_data = paginate_uploaded_file(record.file_path, page, page_size)
+        page_data = paginate_uploaded_file(
+            record.file_path,
+            page,
+            page_size,
+            uploaded_file_id=str(record.id),
+        )
     except FileNotFoundError:
         return JsonResponse({"error": "File not yet available"}, status=202)
     except ValueError as exc:

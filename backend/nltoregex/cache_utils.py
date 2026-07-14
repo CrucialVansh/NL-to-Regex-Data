@@ -9,6 +9,7 @@ from django.core.cache import cache
 LLM_REGEX_TIMEOUT = 60 * 60 * 24
 FILE_COLUMNS_TIMEOUT = 60 * 60
 RESULT_PAGE_TIMEOUT = 60 * 60 * 6
+UPLOAD_PAGE_TIMEOUT = 60 * 60 * 6
 JOB_STATUS_RUNNING_TIMEOUT = 2
 JOB_STATUS_TERMINAL_TIMEOUT = 60
 
@@ -16,6 +17,7 @@ LLM_REGEX_PREFIX = "llm:regex:"
 LLM_LITERAL_PREFIX = "llm:literal:"
 FILE_COLUMNS_PREFIX = "file:columns:"
 RESULT_PAGE_PREFIX = "result:page:"
+UPLOAD_PAGE_PREFIX = "upload:page:"
 JOB_STATUS_PREFIX = "job:status:"
 
 
@@ -93,6 +95,31 @@ def set_cached_result_page(
         result_page_cache_key(job_id, page, page_size),
         page_data,
         RESULT_PAGE_TIMEOUT,
+    )
+
+
+def upload_page_cache_key(uploaded_file_id: str, page: int, page_size: int) -> str:
+    return f"{UPLOAD_PAGE_PREFIX}{uploaded_file_id}:{page}:{page_size}"
+
+
+def get_cached_upload_page(
+    uploaded_file_id: str,
+    page: int,
+    page_size: int,
+) -> dict[str, Any] | None:
+    return cache.get(upload_page_cache_key(uploaded_file_id, page, page_size))
+
+
+def set_cached_upload_page(
+    uploaded_file_id: str,
+    page: int,
+    page_size: int,
+    page_data: dict[str, Any],
+) -> None:
+    cache.set(
+        upload_page_cache_key(uploaded_file_id, page, page_size),
+        page_data,
+        UPLOAD_PAGE_TIMEOUT,
     )
 
 
